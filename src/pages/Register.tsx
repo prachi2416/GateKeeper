@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Shield, Eye, EyeOff, Chrome } from 'lucide-react';
-import { auth, createUserWithEmailAndPassword, googleProvider, signInWithPopup } from '../lib/firebase';
+import { useAuth } from "../contexts/AuthContext";
 
 export default function Register() {
   const [email, setEmail] = useState('');
@@ -11,43 +11,24 @@ export default function Register() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { login } = useAuth();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError("Passwords do not match");
       return;
     }
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
+    login(email);
 
-    setLoading(true);
-    try {
-      await createUserWithEmailAndPassword(auth, email, password);
-      navigate('/');
-    } catch (err: any) {
-      setError(err.message || 'Failed to create account');
-    } finally {
-      setLoading(false);
-    }
+    navigate("/");
   };
 
-  const handleGoogleSignIn = async () => {
-    setError('');
-    setLoading(true);
-    try {
-      await signInWithPopup(auth, googleProvider);
-      navigate('/');
-    } catch (err: any) {
-      setError(err.message || 'Google sign-in failed');
-    } finally {
-      setLoading(false);
-    }
+  const handleGoogleSignIn = () => {
+    login("googleuser@gmail.com");
+    navigate("/");
   };
 
   return (
