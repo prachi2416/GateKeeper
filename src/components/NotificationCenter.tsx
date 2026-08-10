@@ -27,19 +27,33 @@ const typeConfig: Record<string, { icon: any; label: string }> = {
 
 export default function NotificationCenter() {
   const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const panelRef = useRef<HTMLDivElement>(null);
 
   const fetchNotifications = async () => {
     try {
-      const res = await fetch('/api/notifications');
-      const data = await res.json();
-      setNotifications(data);
-    } catch (err) {
-      console.error('Fetch error:', err);
-    } finally {
-      setLoading(false);
+      const response = await fetch("/api/notifications");
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // API may return either:
+      // []
+      // or { notifications: [] }
+      const notificationList = Array.isArray(data)
+        ? data
+        : Array.isArray(data.notifications)
+          ? data.notifications
+          : [];
+
+      setNotifications(notificationList);
+    } catch (error) {
+      console.error("Fetch error:", error);
+      setNotifications([]);
     }
   };
 
