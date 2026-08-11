@@ -1,6 +1,8 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import crypto from "crypto";
+
 import redis from "./redisService.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -8,25 +10,21 @@ const __dirname = path.dirname(__filename);
 
 const luaPath = path.join(__dirname, "../lua/slidingWindowLog.lua");
 
-const slidingWindowLogScript = fs.readFileSync(luaPath, "utf8");
+const script = fs.readFileSync(luaPath, "utf8");
 
 let scriptSha = null;
 
 async function loadScript() {
   if (!scriptSha) {
-    scriptSha = await redis.script("LOAD", slidingWindowLogScript);
+    scriptSha = await redis.script("LOAD", script);
   }
 
   return scriptSha;
 }
 
-export async function slidingWindowLog({
-  key,
-  limit = 10,
-  windowMs = 1000,
-  requested = 1,
-}) {
+export async function slidingWindowLog({ key, window = 60, limit = 10 }) {
   const now = Date.now();
+  const requestId = crypto.randomUUID();
 
   const sha = await loadScript();
 
@@ -35,17 +33,16 @@ export async function slidingWindowLog({
       sha,
       1,
       key,
+      window * 1000,
       limit,
-      windowMs,
-      requested,
       now,
+      requestId,
     );
 
     return {
       allowed: Number(result[0]) === 1,
       remaining: Number(result[1]),
       limit: Number(result[2]),
-      currentCount: Number(result[3]),
     };
   } catch (error) {
     if (error.message.includes("NOSCRIPT")) {
@@ -57,17 +54,16 @@ export async function slidingWindowLog({
         newSha,
         1,
         key,
+        window * 1000,
         limit,
-        windowMs,
-        requested,
         now,
+        requestId,
       );
 
       return {
         allowed: Number(result[0]) === 1,
         remaining: Number(result[1]),
         limit: Number(result[2]),
-        currentCount: Number(result[3]),
       };
     }
 

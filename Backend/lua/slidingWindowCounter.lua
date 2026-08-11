@@ -1,93 +1,57 @@
 local key = KEYS[1]
 
-local limit = tonumber(ARGV[1])
-local window_ms = tonumber(ARGV[2])
-local requested = tonumber(ARGV[3])
-local now = tonumber(ARGV[4])
+local window = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
 
-local data = redis.call(
-    "HMGET",
-    key,
-    "current_count",
-    "previous_count",
-    "window_start"
-)
+local current_window = math.floor(now / window)
+local previous_window = current_window - 1
 
-local current_count = tonumber(data[1]) or 0
-local previous_count = tonumber(data[2]) or 0
-local window_start = tonumber(data[3])
+local current_key = key .. ":" .. current_window
+local previous_key = key .. ":" .. previous_window
 
-if window_start == nil then
-    window_start = now
-end
+local current_count = tonumber(
+    redis.call("GET", current_key)
+) or 0
 
-local elapsed = now - window_start
+local previous_count = tonumber(
+    redis.call("GET", previous_key)
+) or 0
 
--- Move to the next window when necessary
-if elapsed >= window_ms then
+local elapsed = now % window
 
-    local windows_passed = math.floor(
-        elapsed / window_ms
-    )
-
-    if windows_passed == 1 then
-        previous_count = current_count
-    else
-        previous_count = 0
-    end
-
-    current_count = 0
-
-    window_start = window_start +
-        (windows_passed * window_ms)
-
-    elapsed = now - window_start
-end
-
--- Calculate weighted previous-window contribution
-local previous_weight =
-    (window_ms - elapsed) / window_ms
+local weight = 1 - (elapsed / window)
 
 local estimated_count =
-    (previous_count * previous_weight) +
+    previous_count * weight +
     current_count
 
 local allowed = 0
 
-if estimated_count + requested <= limit then
-    current_count = current_count + requested
-    allowed = 1
-end
+if estimated_count < limit then
 
-local new_estimated_count =
-    (previous_count * previous_weight) +
-    current_count
+    current_count = redis.call(
+        "INCR",
+        current_key
+    )
+
+    redis.call(
+        "EXPIRE",
+        current_key,
+        window * 2
+    )
+
+    allowed = 1
+
+end
 
 local remaining = math.max(
     0,
-    math.floor(limit - new_estimated_count)
-)
-
-redis.call(
-    "HSET",
-    key,
-    "current_count",
-    current_count,
-    "previous_count",
-    previous_count,
-    "window_start",
-    window_start
-)
-
-redis.call(
-    "PEXPIRE",
-    key,
-    window_ms * 2 + 60000
+    math.floor(limit - estimated_count - allowed)
 )
 
 return {
     allowed,
     remaining,
-    limit,
-    math.floor(new_estimated_count)
+    limit
 }

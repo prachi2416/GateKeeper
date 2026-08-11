@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+
 import redis from "./redisService.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -8,44 +9,30 @@ const __dirname = path.dirname(__filename);
 
 const luaPath = path.join(__dirname, "../lua/slidingWindowCounter.lua");
 
-const slidingWindowCounterScript = fs.readFileSync(luaPath, "utf8");
+const script = fs.readFileSync(luaPath, "utf8");
 
 let scriptSha = null;
 
 async function loadScript() {
   if (!scriptSha) {
-    scriptSha = await redis.script("LOAD", slidingWindowCounterScript);
+    scriptSha = await redis.script("LOAD", script);
   }
 
   return scriptSha;
 }
 
-export async function slidingWindowCounter({
-  key,
-  limit = 10,
-  windowMs = 1000,
-  requested = 1,
-}) {
+export async function slidingWindowCounter({ key, window = 60, limit = 10 }) {
   const now = Date.now();
 
   const sha = await loadScript();
 
   try {
-    const result = await redis.evalsha(
-      sha,
-      1,
-      key,
-      limit,
-      windowMs,
-      requested,
-      now,
-    );
+    const result = await redis.evalsha(sha, 1, key, window * 1000, limit, now);
 
     return {
       allowed: Number(result[0]) === 1,
       remaining: Number(result[1]),
       limit: Number(result[2]),
-      currentCount: Number(result[3]),
     };
   } catch (error) {
     if (error.message.includes("NOSCRIPT")) {
@@ -57,9 +44,8 @@ export async function slidingWindowCounter({
         newSha,
         1,
         key,
+        window * 1000,
         limit,
-        windowMs,
-        requested,
         now,
       );
 
@@ -67,7 +53,6 @@ export async function slidingWindowCounter({
         allowed: Number(result[0]) === 1,
         remaining: Number(result[1]),
         limit: Number(result[2]),
-        currentCount: Number(result[3]),
       };
     }
 

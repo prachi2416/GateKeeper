@@ -1,11 +1,11 @@
 local key = KEYS[1]
 
-local limit = tonumber(ARGV[1])
-local window_ms = tonumber(ARGV[2])
-local requested = tonumber(ARGV[3])
-local now = tonumber(ARGV[4])
+local window = tonumber(ARGV[1])
+local limit = tonumber(ARGV[2])
+local now = tonumber(ARGV[3])
+local request_id = ARGV[4]
 
-local window_start = now - window_ms
+local window_start = now - window
 
 -- Remove requests outside the current window
 redis.call(
@@ -16,46 +16,39 @@ redis.call(
 )
 
 -- Count requests currently inside the window
-local current_count = redis.call(
+local current = redis.call(
     "ZCARD",
     key
 )
 
 local allowed = 0
 
-if current_count + requested <= limit then
+if current < limit then
 
-    -- Add each requested request
-    for i = 1, requested do
-        local member = tostring(now) .. ":" .. tostring(i) .. ":" .. tostring(math.random(1000000))
-        
-        redis.call(
-            "ZADD",
-            key,
-            now,
-            member
-        )
-    end
+    redis.call(
+        "ZADD",
+        key,
+        now,
+        request_id
+    )
 
     allowed = 1
-    current_count = current_count + requested
+
+    current = current + 1
+
 end
 
--- Keep Redis key alive slightly longer than the window
+-- Keep Redis memory under control
 redis.call(
-    "PEXPIRE",
+    "EXPIRE",
     key,
-    window_ms + 60000
+    window + 1
 )
 
-local remaining = math.max(
-    0,
-    limit - current_count
-)
+local remaining = math.max(0, limit - current)
 
 return {
     allowed,
     remaining,
-    limit,
-    current_count
+    limit
 }
