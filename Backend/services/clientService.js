@@ -7,44 +7,22 @@ function clientKey(id) {
   return `${CLIENT_PREFIX}:${id}`;
 }
 
-export async function getClientById(id) {
-  if (!id) return null;
-
-  const client = await redis.hgetall(clientKey(id));
-
-  if (!client || !client.id) {
-    return null;
-  }
-
-  return {
-    ...client,
-    limit: Number(client.limit),
-    windowMs: Number(client.windowMs),
-  };
-}
-
 export async function getClientByApiKey(apiKey) {
-  if (!apiKey) return null;
-
   const ids = await redis.smembers(CLIENT_INDEX);
 
   if (!ids.length) {
     return null;
   }
 
-  const pipeline = redis.pipeline();
+  for (const id of ids) {
+    const client = await redis.hgetall(clientKey(id));
 
-  ids.forEach((id) => {
-    pipeline.hget(clientKey(id), "apiKey");
-  });
-
-  const results = await pipeline.exec();
-
-  for (let i = 0; i < results.length; i++) {
-    const [error, storedApiKey] = results[i];
-
-    if (!error && storedApiKey === apiKey) {
-      return getClientById(ids[i]);
+    if (client && client.apiKey === apiKey) {
+      return {
+        ...client,
+        limit: Number(client.limit),
+        windowMs: Number(client.windowMs),
+      };
     }
   }
 

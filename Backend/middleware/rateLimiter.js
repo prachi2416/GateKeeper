@@ -5,13 +5,15 @@ import { getClientByApiKey } from "../services/clientService.js";
 
 export function rateLimiter(options = {}) {
   const {
-    keyPrefix = "gatekeeper:ratelimit",
+    algorithm = "token-bucket",
 
-    // Fallback values
     capacity = 10,
     refillRate = 1,
+
     limit = 10,
     windowMs = 1000,
+
+    keyPrefix = "gatekeeper:ratelimit",
   } = options;
 
   return async (req, res, next) => {
@@ -57,32 +59,20 @@ export function rateLimiter(options = {}) {
       }
 
       // ------------------------------------
-      // 4. Get client's configuration
+      // 4. Use client's configuration
       // ------------------------------------
 
-      const algorithm = client.algorithm || "token-bucket";
+      const selectedAlgorithm = client.algorithm || algorithm;
 
-      const clientLimit =
-        Number(client.limit) > 0 ? Number(client.limit) : limit;
+      const selectedLimit = Number(client.limit) || limit;
 
-      const clientWindowMs =
-        Number(client.windowMs) > 0 ? Number(client.windowMs) : windowMs;
-
-      // Token bucket refill rate:
-      //
-      // Example:
-      // limit = 5
-      // windowMs = 1000
-      //
-      // => 5 tokens per second
-
-      const clientRefillRate = clientLimit / (clientWindowMs / 1000);
+      const selectedWindowMs = Number(client.windowMs) || windowMs;
 
       // ------------------------------------
-      // 5. Redis rate-limit key
+      // 5. Redis key
       // ------------------------------------
 
-      const key = `${keyPrefix}:${algorithm}:${client.id}`;
+      const key = `${keyPrefix}:${selectedAlgorithm}:${client.id}`;
 
       let result;
 
@@ -90,11 +80,11 @@ export function rateLimiter(options = {}) {
       // 6. Token Bucket
       // ------------------------------------
 
-      if (algorithm === "token-bucket") {
+      if (selectedAlgorithm === "token-bucket") {
         result = await tokenBucket({
           key,
-          capacity: clientLimit,
-          refillRate: clientRefillRate,
+          capacity: selectedLimit,
+          refillRate,
           requested: 1,
         });
       }
@@ -102,11 +92,11 @@ export function rateLimiter(options = {}) {
       // ------------------------------------
       // 7. Sliding Window Log
       // ------------------------------------
-      else if (algorithm === "sliding-window-log") {
+      else if (selectedAlgorithm === "sliding-window-log") {
         result = await slidingWindowLog({
           key,
-          limit: clientLimit,
-          windowMs: clientWindowMs,
+          limit: selectedLimit,
+          windowMs: selectedWindowMs,
           requested: 1,
         });
       }
@@ -114,11 +104,11 @@ export function rateLimiter(options = {}) {
       // ------------------------------------
       // 8. Sliding Window Counter
       // ------------------------------------
-      else if (algorithm === "sliding-window-counter") {
+      else if (selectedAlgorithm === "sliding-window-counter") {
         result = await slidingWindowCounter({
           key,
-          limit: clientLimit,
-          windowMs: clientWindowMs,
+          limit: selectedLimit,
+          windowMs: selectedWindowMs,
           requested: 1,
         });
       }
@@ -130,24 +120,22 @@ export function rateLimiter(options = {}) {
         return res.status(500).json({
           success: false,
           error: "Invalid rate limiting algorithm",
-          algorithm,
+          algorithm: selectedAlgorithm,
         });
       }
 
       // ------------------------------------
-      // 10. Rate-limit headers
+      // 10. Rate limit headers
       // ------------------------------------
 
       res.setHeader("X-RateLimit-Limit", result.limit);
 
       res.setHeader("X-RateLimit-Remaining", result.remaining);
 
-      res.setHeader("X-RateLimit-Algorithm", algorithm);
-
-      res.setHeader("X-RateLimit-Client", client.id);
+      res.setHeader("X-RateLimit-Algorithm", selectedAlgorithm);
 
       // ------------------------------------
-      // 11. Request blocked
+      // 11. Block request
       // ------------------------------------
 
       if (!result.allowed) {
@@ -157,14 +145,14 @@ export function rateLimiter(options = {}) {
           success: false,
           error: "Too Many Requests",
           message: "Rate limit exceeded",
-          algorithm,
+          algorithm: selectedAlgorithm,
           limit: result.limit,
           remaining: result.remaining,
         });
       }
 
       // ------------------------------------
-      // 12. Request allowed
+      // 12. Continue
       // ------------------------------------
 
       next();
