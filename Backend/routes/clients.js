@@ -51,6 +51,7 @@ router.get("/", async (req, res) => {
           ...client,
           limit: Number(client.limit),
           windowMs: Number(client.windowMs),
+          refillRate: Number(client.refillRate),
           status: client.status || "active",
         };
       })
@@ -79,6 +80,7 @@ router.post("/", async (req, res) => {
       algorithm = "token-bucket",
       limit = 10,
       windowMs = 1000,
+      refillRate = 1,
     } = req.body;
 
     if (!name) {
@@ -101,7 +103,26 @@ router.post("/", async (req, res) => {
         allowedAlgorithms: validAlgorithms,
       });
     }
+    if (!Number.isFinite(Number(limit)) || Number(limit) <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "limit must be a positive number",
+      });
+    }
 
+    if (!Number.isFinite(Number(windowMs)) || Number(windowMs) <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "windowMs must be a positive number",
+      });
+    }
+
+    if (!Number.isFinite(Number(refillRate)) || Number(refillRate) <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: "refillRate must be a positive number",
+      });
+    }
     const id = `client_${crypto.randomBytes(8).toString("hex")}`;
     const apiKey = generateApiKey();
 
@@ -112,6 +133,7 @@ router.post("/", async (req, res) => {
       algorithm,
       limit: String(limit),
       windowMs: String(windowMs),
+      refillRate: String(refillRate),
       status: "active",
       createdAt: new Date().toISOString(),
     };
@@ -152,6 +174,7 @@ router.get("/:id", async (req, res) => {
         ...client,
         limit: Number(client.limit),
         windowMs: Number(client.windowMs),
+        refillRate: Number(client.refillRate),
       },
     });
   } catch (error) {
@@ -178,7 +201,7 @@ router.put("/:id", async (req, res) => {
       });
     }
 
-    const { name, algorithm, limit, windowMs, status } = req.body;
+    const { name, algorithm, limit, windowMs, refillRate, status } = req.body;
 
     if (algorithm !== undefined && !VALID_ALGORITHMS.includes(algorithm)) {
       return res.status(400).json({
@@ -215,7 +238,15 @@ router.put("/:id", async (req, res) => {
         error: "windowMs must be a positive number",
       });
     }
-
+    if (
+      refillRate !== undefined &&
+      (!Number.isFinite(Number(refillRate)) || Number(refillRate) <= 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: "refillRate must be a positive number",
+      });
+    }
     const updates = {};
 
     if (name !== undefined) updates.name = name;
@@ -223,11 +254,13 @@ router.put("/:id", async (req, res) => {
     if (limit !== undefined) updates.limit = String(limit);
     if (windowMs !== undefined) updates.windowMs = String(windowMs);
     if (status !== undefined) updates.status = status;
-
+    if (refillRate !== undefined) {
+      updates.refillRate = String(refillRate);
+    }
     if (Object.keys(updates).length > 0) {
       await redis.hset(clientKey(id), updates);
     }
-
+    
     const updated = await redis.hgetall(clientKey(id));
 
     res.json({
@@ -237,6 +270,7 @@ router.put("/:id", async (req, res) => {
         ...updated,
         limit: Number(updated.limit),
         windowMs: Number(updated.windowMs),
+        refillRate: Number(updated.refillRate),
       },
     });
   } catch (error) {

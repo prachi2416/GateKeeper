@@ -67,6 +67,7 @@ export function rateLimiter(options = {}) {
       const selectedLimit = Number(client.limit) || limit;
 
       const selectedWindowMs = Number(client.windowMs) || windowMs;
+      const selectedRefillRate = Number(client.refillRate) || refillRate;
 
       // ------------------------------------
       // 5. Redis key
@@ -84,7 +85,7 @@ export function rateLimiter(options = {}) {
         result = await tokenBucket({
           key,
           capacity: selectedLimit,
-          refillRate,
+          refillRate: selectedRefillRate,
           requested: 1,
         });
       }
