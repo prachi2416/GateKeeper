@@ -77,9 +77,7 @@ export function rateLimiter(options = {}) {
 
       let result;
 
-      // ------------------------------------
       // 6. Token Bucket
-      // ------------------------------------
 
       if (selectedAlgorithm === "token-bucket") {
         result = await tokenBucket({
@@ -90,9 +88,8 @@ export function rateLimiter(options = {}) {
         });
       }
 
-      // ------------------------------------
       // 7. Sliding Window Log
-      // ------------------------------------
+ 
       else if (selectedAlgorithm === "sliding-window-log") {
         result = await slidingWindowLog({
           key,
