@@ -13,6 +13,7 @@ const router = express.Router();
 
 const CLIENT_PREFIX = "gatekeeper:client";
 const CLIENT_INDEX = "gatekeeper:clients";
+const API_KEY_INDEX = "gatekeeper:apikey";
 
 function generateApiKey() {
   return `gk_live_${crypto.randomBytes(24).toString("hex")}`;
@@ -140,6 +141,7 @@ router.post("/", async (req, res) => {
 
     await redis.hset(clientKey(id), client);
     await redis.sadd(CLIENT_INDEX, id);
+    await redis.set(`${API_KEY_INDEX}:${apiKey}`, id);
 
     res.status(201).json({
       success: true,
@@ -297,8 +299,14 @@ router.delete("/:id", async (req, res) => {
       });
     }
 
+    const client = await redis.hgetall(clientKey(id));
+
     await redis.del(clientKey(id));
     await redis.srem(CLIENT_INDEX, id);
+
+    if (client.apiKey) {
+      await redis.del(`gatekeeper:apikey:${client.apiKey}`);
+    }
 
     res.json({
       success: true,

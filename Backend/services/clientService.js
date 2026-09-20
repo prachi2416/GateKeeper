@@ -1,30 +1,29 @@
 import redis from "./redisService.js";
 
 const CLIENT_PREFIX = "gatekeeper:client";
-const CLIENT_INDEX = "gatekeeper:clients";
+const API_KEY_INDEX = "gatekeeper:apikey";
 
 function clientKey(id) {
   return `${CLIENT_PREFIX}:${id}`;
 }
 
 export async function getClientByApiKey(apiKey) {
-  const ids = await redis.smembers(CLIENT_INDEX);
+  const clientId = await redis.get(`${API_KEY_INDEX}:${apiKey}`);
 
-  if (!ids.length) {
+  if (!clientId) {
     return null;
   }
 
-  for (const id of ids) {
-    const client = await redis.hgetall(clientKey(id));
+  const client = await redis.hgetall(clientKey(clientId));
 
-    if (client && client.apiKey === apiKey) {
-      return {
-        ...client,
-        limit: Number(client.limit),
-        windowMs: Number(client.windowMs),
-      };
-    }
+  if (!client || !client.id) {
+    return null;
   }
 
-  return null;
+  return {
+    ...client,
+    limit: Number(client.limit),
+    windowMs: Number(client.windowMs),
+    refillRate: Number(client.refillRate),
+  };
 }

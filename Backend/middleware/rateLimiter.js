@@ -64,10 +64,17 @@ export function rateLimiter(options = {}) {
 
       const selectedAlgorithm = client.algorithm || algorithm;
 
-      const selectedLimit = Number(client.limit) || limit;
+      const selectedLimit = Number.isFinite(Number(client.limit))
+        ? Number(client.limit)
+        : limit;
 
-      const selectedWindowMs = Number(client.windowMs) || windowMs;
-      const selectedRefillRate = Number(client.refillRate) || refillRate;
+      const selectedWindowMs = Number.isFinite(Number(client.windowMs))
+        ? Number(client.windowMs)
+        : windowMs;
+
+      const selectedRefillRate = Number.isFinite(Number(client.refillRate))
+        ? Number(client.refillRate)
+        : refillRate;
 
       // ------------------------------------
       // 5. Redis key
