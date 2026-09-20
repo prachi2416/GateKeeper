@@ -4,8 +4,8 @@ const testFiles = [
   "test/tokenBucket.test.js",
   "test/slidingWindowLog.test.js",
   "test/slidingWindowCounter.test.js",
+  "test/api.test.js",
 ];
-
 for (const file of testFiles) {
   console.log(`\nRunning: ${file}\n`);
 

@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+
 import { slidingWindowCounter } from "../services/slidingWindowCounter.js";
 import redis from "../services/redisService.js";
+
 test("Sliding Window Counter allows requests within limit", async () => {
-  const key = `test:sliding-counter:allowed:${Date.now()}`;
+  const key = `test:sliding-window-counter:allowed:${Date.now()}`;
 
   const result = await slidingWindowCounter({
     key,
@@ -18,7 +20,7 @@ test("Sliding Window Counter allows requests within limit", async () => {
 });
 
 test("Sliding Window Counter rejects requests when limit is exhausted", async () => {
-  const key = `test:sliding-counter:rejected:${Date.now()}`;
+  const key = `test:sliding-window-counter:rejected:${Date.now()}`;
 
   await slidingWindowCounter({
     key,
@@ -45,6 +47,7 @@ test("Sliding Window Counter rejects requests when limit is exhausted", async ()
   assert.equal(result.remaining, 0);
   assert.equal(result.limit, 2);
 });
+
 test.after(async () => {
   await redis.quit();
 });
