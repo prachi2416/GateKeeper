@@ -36,13 +36,15 @@ interface Metrics {
 }
 
 interface RequestLog {
-  id: number | string;
   timestamp: string;
-  client_id: string;
-  endpoint: string;
-  status: string;
+  method: string;
+  path: string;
+  clientId: string;
+  clientName: string;
   algorithm: string;
-  response_time: number;
+  allowed: boolean;
+  statusCode: number;
+  latency: number;
 }
 
 const COLORS = ["#10b981", "#f59e0b", "#6366f1"];
@@ -113,14 +115,13 @@ export default function Dashboard() {
             : metricsData;
 
         setMetrics({
-          total: Number(normalizedMetrics?.total ?? 0),
-          allowed: Number(normalizedMetrics?.allowed ?? 0),
-          blocked: Number(normalizedMetrics?.blocked ?? 0),
-          successRate: normalizedMetrics?.successRate ?? 0,
-          avgLatency: normalizedMetrics?.avgLatency ?? 0,
-          activeClients: Number(normalizedMetrics?.activeClients ?? 0),
+          total: Number(normalizedMetrics.totalRequests || 0),
+          allowed: Number(normalizedMetrics.allowedRequests || 0),
+          blocked: Number(normalizedMetrics.blockedRequests || 0),
+          successRate: Number(normalizedMetrics.successRate || 0),
+          avgLatency: Number(normalizedMetrics.averageLatency || 0),
+          activeClients: Number(normalizedMetrics.activeClients || 0),
         });
-
         // -------------------------
         // Request Logs
         // -------------------------
@@ -557,7 +558,7 @@ export default function Dashboard() {
               ) : (
                 logs.map((log) => (
                   <tr
-                    key={log.id}
+                    key={`${log.timestamp}-${log.clientId}-${log.path}`}
                     className="border-b border-slate-800/50 hover:bg-slate-800/30"
                   >
                     <td className="px-5 py-3 text-slate-400">
@@ -567,22 +568,22 @@ export default function Dashboard() {
                     </td>
 
                     <td className="px-5 py-3 text-slate-300 font-mono text-xs">
-                      {log.client_id || "-"}
+                      {log.clientId || "-"}
                     </td>
 
                     <td className="px-5 py-3 text-slate-300">
-                      {log.endpoint || "-"}
+                      {log.path || "-"}
                     </td>
 
                     <td className="px-5 py-3">
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                          log.status === "allowed"
+                          log.allowed
                             ? "bg-emerald-500/10 text-emerald-400"
                             : "bg-red-500/10 text-red-400"
                         }`}
                       >
-                        {log.status || "unknown"}
+                        {log.allowed ? "allowed" : "blocked"}
                       </span>
                     </td>
 
@@ -591,7 +592,7 @@ export default function Dashboard() {
                     </td>
 
                     <td className="px-5 py-3 text-slate-400">
-                      {log.response_time ?? "-"}ms
+                      {log.latency ?? "-"}ms
                     </td>
                   </tr>
                 ))

@@ -2,6 +2,56 @@ import { tokenBucket } from "../services/tokenBucket.js";
 import { slidingWindowLog } from "../services/slidingWindowLog.js";
 import { slidingWindowCounter } from "../services/slidingWindowCounter.js";
 import { getClientByApiKey } from "../services/clientService.js";
+import redis from "../services/redisService.js";
+
+const METRICS_KEY = "gatekeeper:metrics";
+const ACTIVE_CLIENTS_KEY = "gatekeeper:metrics:active-clients";
+const REQUEST_LOGS_KEY = "gatekeeper:request-logs";
+
+async function recordMetric({
+  client,
+  algorithm,
+  allowed,
+  latency,
+  statusCode,
+  req,
+}) {
+  try {
+    await redis.hincrby(METRICS_KEY, "totalRequests", 1);
+
+    if (allowed) {
+      await redis.hincrby(METRICS_KEY, "allowedRequests", 1);
+    } else {
+      await redis.hincrby(METRICS_KEY, "blockedRequests", 1);
+    }
+
+    await redis.hincrby(
+      METRICS_KEY,
+      "totalLatency",
+      Math.max(0, Math.round(latency)),
+    );
+
+    await redis.sadd(ACTIVE_CLIENTS_KEY, client.id);
+
+    const log = {
+      timestamp: new Date().toISOString(),
+      method: req.method,
+      path: req.originalUrl,
+      clientId: client.id,
+      clientName: client.name,
+      algorithm,
+      allowed,
+      statusCode,
+      latency: Math.round(latency),
+    };
+
+    await redis.lpush(REQUEST_LOGS_KEY, JSON.stringify(log));
+    await redis.ltrim(REQUEST_LOGS_KEY, 0, 99);
+  } catch (error) {
+    // Metrics must never break the actual API request.
+    console.error("Metrics recording error:", error);
+  }
+}
 
 export function rateLimiter(options = {}) {
   const {
@@ -17,6 +67,8 @@ export function rateLimiter(options = {}) {
   } = options;
 
   return async (req, res, next) => {
+    const requestStart = Date.now();
+
     try {
       // ------------------------------------
       // 1. Get API key
@@ -72,9 +124,12 @@ export function rateLimiter(options = {}) {
         ? Number(client.windowMs)
         : windowMs;
 
-      const selectedRefillRate = Number.isFinite(Number(client.refillRate))
-        ? Number(client.refillRate)
-        : refillRate;
+      const selectedRefillRate =
+        client.refillRate !== null &&
+        client.refillRate !== undefined &&
+        Number.isFinite(Number(client.refillRate))
+          ? Number(client.refillRate)
+          : refillRate;
 
       // ------------------------------------
       // 5. Redis key
@@ -84,7 +139,9 @@ export function rateLimiter(options = {}) {
 
       let result;
 
+      // ------------------------------------
       // 6. Token Bucket
+      // ------------------------------------
 
       if (selectedAlgorithm === "token-bucket") {
         result = await tokenBucket({
@@ -95,8 +152,9 @@ export function rateLimiter(options = {}) {
         });
       }
 
+      // ------------------------------------
       // 7. Sliding Window Log
- 
+      // ------------------------------------
       else if (selectedAlgorithm === "sliding-window-log") {
         result = await slidingWindowLog({
           key,
@@ -134,10 +192,10 @@ export function rateLimiter(options = {}) {
       // ------------------------------------
 
       res.setHeader("X-RateLimit-Limit", result.limit);
-
       res.setHeader("X-RateLimit-Remaining", result.remaining);
-
       res.setHeader("X-RateLimit-Algorithm", selectedAlgorithm);
+
+      const latency = Date.now() - requestStart;
 
       // ------------------------------------
       // 11. Block request
@@ -145,6 +203,15 @@ export function rateLimiter(options = {}) {
 
       if (!result.allowed) {
         res.setHeader("Retry-After", "1");
+
+        await recordMetric({
+          client,
+          algorithm: selectedAlgorithm,
+          allowed: false,
+          latency: Date.now() - requestStart,
+          statusCode: 429,
+          req,
+        });
 
         return res.status(429).json({
           success: false,
@@ -157,7 +224,20 @@ export function rateLimiter(options = {}) {
       }
 
       // ------------------------------------
-      // 12. Continue
+      // 12. Record allowed request
+      // ------------------------------------
+
+      await recordMetric({
+        client,
+        algorithm: selectedAlgorithm,
+        allowed: true,
+        latency,
+        statusCode: 200,
+        req,
+      });
+
+      // ------------------------------------
+      // 13. Continue
       // ------------------------------------
 
       next();

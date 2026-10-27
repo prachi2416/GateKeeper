@@ -2,11 +2,15 @@ import { useEffect, useState } from 'react';
 import { Plus, Search, Eye, Pencil, Trash2, X, Filter } from 'lucide-react';
 
 interface Client {
-  client_id: string;
-  tier: string;
-  request_limit: number;
-  requests_used: number;
-  status: string;
+  id: string;
+  name: string;
+  apiKey: string;
+  algorithm: "token-bucket" | "sliding-window-log" | "sliding-window-counter";
+  limit: number;
+  windowMs: number;
+  refillRate: number;
+  status: "active" | "disabled";
+  createdAt: string;
 }
 
 export default function Clients() {
@@ -15,77 +19,120 @@ export default function Clients() {
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
-  const [formData, setFormData] = useState({ client_id: '', tier: 'free', request_limit: 100, status: 'active' });
+  const [formData, setFormData] = useState({
+    name: "",
+    algorithm: "token-bucket",
+    limit: 10,
+    windowMs: 1000,
+    refillRate: 1,
+    status: "active",
+  });
 
   const fetchClients = async () => {
     try {
-      const res = await fetch('/api/clients');
-      const data = await res.json();
-      setClients(data);
-    } catch (err) {
-      console.error('Fetch error:', err);
+      const response = await fetch("/api/clients");
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch clients: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      setClients(Array.isArray(data.clients) ? data.clients : []);
+    } catch (error) {
+      console.error("Fetch error:", error);
+      setClients([]);
     } finally {
       setLoading(false);
     }
   };
-
   useEffect(() => {
     fetchClients();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     try {
       if (editingClient) {
-        await fetch('/api/clients', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ client_id: editingClient.client_id, tier: formData.tier, request_limit: formData.request_limit, status: formData.status }),
-        });
-      } else {
-        await fetch('/api/clients', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const response = await fetch(`/api/clients/${editingClient.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(formData),
         });
+
+        if (!response.ok) {
+          throw new Error(`Update failed: ${response.status}`);
+        }
+      } else {
+        const response = await fetch("/api/clients", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(formData),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Create failed: ${response.status}`);
+        }
       }
+
       setShowModal(false);
       setEditingClient(null);
-      setFormData({ client_id: '', tier: 'free', request_limit: 100, status: 'active' });
+
+      setFormData({
+        name: "",
+        algorithm: "token-bucket",
+        limit: 10,
+        windowMs: 1000,
+        refillRate: 1,
+        status: "active",
+      });
+
       fetchClients();
     } catch (err) {
-      console.error('Submit error:', err);
+      console.error("Submit error:", err);
     }
   };
 
-  const handleDelete = async (client_id: string) => {
-    if (!confirm('Are you sure you want to delete this client?')) return;
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this client?")) return;
+
     try {
-      await fetch('/api/clients', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ client_id }),
+      const response = await fetch(`/api/clients/${id}`, {
+        method: "DELETE",
       });
+
+      if (!response.ok) {
+        throw new Error(`Delete failed: ${response.status}`);
+      }
+
       fetchClients();
     } catch (err) {
-      console.error('Delete error:', err);
+      console.error("Delete error:", err);
     }
   };
 
   const openEdit = (client: Client) => {
     setEditingClient(client);
+
     setFormData({
-      client_id: client.client_id,
-      tier: client.tier,
-      request_limit: client.request_limit,
+      name: client.name,
+      algorithm: client.algorithm,
+      limit: client.limit,
+      windowMs: client.windowMs,
+      refillRate: client.refillRate,
       status: client.status,
     });
+
     setShowModal(true);
   };
 
-  const filteredClients = clients.filter((c) =>
-    c.client_id.toLowerCase().includes(search.toLowerCase()) ||
-    c.tier.toLowerCase().includes(search.toLowerCase())
+  const filteredClients = clients.filter(
+    (client) =>
+      client.name.toLowerCase().includes(search.toLowerCase()) ||
+      client.id.toLowerCase().includes(search.toLowerCase()) ||
+      client.algorithm.toLowerCase().includes(search.toLowerCase()) ||
+      client.status.toLowerCase().includes(search.toLowerCase()),
   );
 
   return (
@@ -93,12 +140,21 @@ export default function Clients() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Clients</h1>
-          <p className="text-slate-500 text-sm mt-1">Manage API clients and rate limits</p>
+          <p className="text-slate-500 text-sm mt-1">
+            Manage API clients and rate limits
+          </p>
         </div>
         <button
           onClick={() => {
             setEditingClient(null);
-            setFormData({ client_id: '', tier: 'free', request_limit: 100, status: 'active' });
+            setFormData({
+              name: "",
+              algorithm: "token-bucket",
+              limit: 10,
+              windowMs: 1000,
+              refillRate: 1,
+              status: "active",
+            });
             setShowModal(true);
           }}
           className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg transition-colors"
@@ -128,7 +184,10 @@ export default function Clients() {
         {loading ? (
           <div className="p-8 space-y-3">
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-12 bg-slate-800/50 rounded animate-pulse" />
+              <div
+                key={i}
+                className="h-12 bg-slate-800/50 rounded animate-pulse"
+              />
             ))}
           </div>
         ) : (
@@ -136,12 +195,18 @@ export default function Clients() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-800">
-                  <th className="text-left px-5 py-3 text-slate-500 font-medium">Client ID</th>
-                  <th className="text-left px-5 py-3 text-slate-500 font-medium">Tier</th>
-                  <th className="text-left px-5 py-3 text-slate-500 font-medium">Request Limit</th>
-                  <th className="text-left px-5 py-3 text-slate-500 font-medium">Requests Used</th>
-                  <th className="text-left px-5 py-3 text-slate-500 font-medium">Status</th>
-                  <th className="text-right px-5 py-3 text-slate-500 font-medium">Actions</th>
+                  <th className="text-left px-5 py-3 text-slate-500 font-medium">
+                    Client ID
+                  </th>
+                  <th className="text-left px-5 py-3 text-slate-500 font-medium">
+                    Algorithm
+                  </th>
+                  <th className="text-left px-5 py-3 text-slate-500 font-medium">
+                    Limit
+                  </th>
+                  <th className="text-left px-5 py-3 text-slate-500 font-medium">
+                    Window
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -158,29 +223,30 @@ export default function Clients() {
                   </tr>
                 ) : (
                   filteredClients.map((client) => (
-                    <tr key={client.client_id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
-                      <td className="px-5 py-3 text-slate-300 font-mono text-xs">{client.client_id}</td>
+                    <tr
+                      key={client.id}
+                      className="border-b border-slate-800/50 hover:bg-slate-800/30"
+                    >
+                      <td className="px-5 py-3 text-slate-300 font-mono text-xs">
+                        {client.id}
+                      </td>
                       <td className="px-5 py-3">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                            client.tier === 'enterprise'
-                              ? 'bg-indigo-500/10 text-indigo-400'
-                              : client.tier === 'pro'
-                              ? 'bg-amber-500/10 text-amber-400'
-                              : 'bg-emerald-500/10 text-emerald-400'
-                          }`}
-                        >
-                          {client.tier}
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400">
+                          {client.algorithm}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-slate-400">{client.request_limit.toLocaleString()}/min</td>
-                      <td className="px-5 py-3 text-slate-400">{client.requests_used?.toLocaleString()}</td>
+                      <td className="px-5 py-3 text-slate-400">
+                        {client.limit.toLocaleString()}
+                      </td>
+                      <td className="px-5 py-3 text-slate-400">
+                        {client.windowMs.toLocaleString()} ms
+                      </td>
                       <td className="px-5 py-3">
                         <span
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                            client.status === 'active'
-                              ? 'bg-emerald-500/10 text-emerald-400'
-                              : 'bg-red-500/10 text-red-400'
+                            client.status === "active"
+                              ? "bg-emerald-500/10 text-emerald-400"
+                              : "bg-red-500/10 text-red-400"
                           }`}
                         >
                           {client.status}
@@ -198,7 +264,7 @@ export default function Clients() {
                             <Pencil size={14} />
                           </button>
                           <button
-                            onClick={() => handleDelete(client.client_id)}
+                            onClick={() => handleDelete(client.id)}
                             className="p-1.5 text-slate-400 hover:text-red-400 rounded hover:bg-slate-800"
                           >
                             <Trash2 size={14} />
@@ -216,55 +282,94 @@ export default function Clients() {
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setShowModal(false)} />
+          <div
+            className="absolute inset-0 bg-black/60"
+            onClick={() => setShowModal(false)}
+          />
           <div className="relative bg-slate-900 border border-slate-800 rounded-xl w-full max-w-md shadow-2xl">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
               <h3 className="text-lg font-semibold text-white">
-                {editingClient ? 'Edit Client' : 'Add Client'}
+                {editingClient ? "Edit Client" : "Add Client"}
               </h3>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-200">
+              <button
+                onClick={() => setShowModal(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
                 <X size={18} />
               </button>
             </div>
             <form onSubmit={handleSubmit} className="p-5 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1.5">Client ID</label>
-                <input
-                  type="text"
-                  value={formData.client_id}
-                  onChange={(e) => setFormData({ ...formData, client_id: e.target.value })}
-                  placeholder="client-001"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500/50"
-                  required
-                />
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1.5">
+                    Client Name
+                  </label>
+
+                  <input
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
+                    placeholder="My API Client"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200"
+                    required
+                  />
+                </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1.5">Tier</label>
-                <select
-                  value={formData.tier}
-                  onChange={(e) => setFormData({ ...formData, tier: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                >
-                  <option value="free">Free</option>
-                  <option value="pro">Pro</option>
-                  <option value="enterprise">Enterprise</option>
-                </select>
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1.5">
+                    Algorithm
+                  </label>
+
+                  <select
+                    value={formData.algorithm}
+                    onChange={(e) =>
+                      setFormData({ ...formData, algorithm: e.target.value })
+                    }
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200"
+                  >
+                    <option value="token-bucket">Token Bucket</option>
+                    <option value="sliding-window-log">
+                      Sliding Window Log
+                    </option>
+                    <option value="sliding-window-counter">
+                      Sliding Window Counter
+                    </option>
+                  </select>
+                </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1.5">Custom Limit (requests/min)</label>
-                <input
-                  type="number"
-                  value={formData.request_limit}
-                  onChange={(e) => setFormData({ ...formData, request_limit: Number(e.target.value) })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                  required
-                />
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1.5">
+                    Request Limit
+                  </label>
+
+                  <input
+                    type="number"
+                    value={formData.limit}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        limit: Number(e.target.value),
+                      })
+                    }
+                    min="1"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200"
+                    required
+                  />
+                </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1.5">Status</label>
+                <label className="block text-sm font-medium text-slate-400 mb-1.5">
+                  Status
+                </label>
                 <select
                   value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, status: e.target.value })
+                  }
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
                 >
                   <option value="active">Active</option>
@@ -283,7 +388,7 @@ export default function Clients() {
                   type="submit"
                   className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg transition-colors"
                 >
-                  {editingClient ? 'Update' : 'Create'}
+                  {editingClient ? "Update" : "Create"}
                 </button>
               </div>
             </form>

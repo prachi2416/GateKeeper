@@ -1,109 +1,209 @@
-import { useEffect, useState } from 'react';
-import { Save, RotateCcw, AlertCircle } from 'lucide-react';
+import { useEffect, useState } from "react";
+import { Save, RotateCcw, AlertCircle, CheckCircle2 } from "lucide-react";
 
 interface RateLimitSettings {
-  id: number;
-  tier: string;
-  requests_per_minute: number;
-  burst_capacity: number;
-  refill_rate: number;
+  id: string;
+  name: string;
+  algorithm: string;
+  description: string;
 }
 
 interface SystemSettings {
-  id: number;
-  redis_host: string;
-  redis_port: number;
-  algorithm_selection: string;
+  serviceName: string;
+  environment: string;
+  port: number;
+  redisHost: string;
+  redisPort: number;
+  defaultAlgorithm: string;
 }
+
+const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
+  serviceName: "GateKeeper",
+  environment: "development",
+  port: 5000,
+  redisHost: "127.0.0.1",
+  redisPort: 6379,
+  defaultAlgorithm: "token-bucket",
+};
+
+const ALGORITHMS: RateLimitSettings[] = [
+  {
+    id: "token-bucket",
+    name: "Token Bucket",
+    algorithm: "token-bucket",
+    description: "Allows bursts and replenishes tokens at a configured rate.",
+  },
+  {
+    id: "sliding-window-log",
+    name: "Sliding Window Log",
+    algorithm: "sliding-window-log",
+    description: "Tracks individual requests within a rolling time window.",
+  },
+  {
+    id: "sliding-window-counter",
+    name: "Sliding Window Counter",
+    algorithm: "sliding-window-counter",
+    description: "Estimates rolling-window usage using adjacent window counts.",
+  },
+];
 
 export default function Settings() {
   const [rateLimits, setRateLimits] = useState<RateLimitSettings[]>([]);
-  const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
+
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>(
+    DEFAULT_SYSTEM_SETTINGS,
+  );
+
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     const fetchData = async () => {
+      setLoading(true);
+      setLoadError("");
+
       try {
-        const [rlRes, sysRes] = await Promise.all([
-          fetch('/api/rate-limits'),
-          fetch('/api/system-settings'),
+        const [rateLimitResponse, systemResponse] = await Promise.all([
+          fetch("/api/rate-limits"),
+          fetch("/api/system-settings"),
         ]);
-        const rlData = await rlRes.json();
-        const sysData = await sysRes.json();
-        setRateLimits(rlData);
-        setSystemSettings(sysData);
-      } catch (err) {
-        console.error('Fetch error:', err);
+
+        if (!rateLimitResponse.ok) {
+          throw new Error(
+            `Rate-limit settings request failed (${rateLimitResponse.status})`,
+          );
+        }
+
+        if (!systemResponse.ok) {
+          throw new Error(
+            `System settings request failed (${systemResponse.status})`,
+          );
+        }
+
+        const rateLimitData = await rateLimitResponse.json();
+        const systemData = await systemResponse.json();
+
+        const fetchedRateLimits = Array.isArray(rateLimitData)
+          ? rateLimitData
+          : Array.isArray(rateLimitData?.rateLimits)
+            ? rateLimitData.rateLimits
+            : [];
+
+        const fetchedSystemSettings = systemData?.settings ?? systemData;
+
+        if (cancelled) return;
+
+        setRateLimits(fetchedRateLimits);
+
+        setSystemSettings({
+          serviceName:
+            fetchedSystemSettings?.serviceName ??
+            DEFAULT_SYSTEM_SETTINGS.serviceName,
+          environment:
+            fetchedSystemSettings?.environment ??
+            DEFAULT_SYSTEM_SETTINGS.environment,
+          port: Number(
+            fetchedSystemSettings?.port ?? DEFAULT_SYSTEM_SETTINGS.port,
+          ),
+          redisHost:
+            fetchedSystemSettings?.redisHost ??
+            DEFAULT_SYSTEM_SETTINGS.redisHost,
+          redisPort: Number(
+            fetchedSystemSettings?.redisPort ??
+              DEFAULT_SYSTEM_SETTINGS.redisPort,
+          ),
+          defaultAlgorithm:
+            fetchedSystemSettings?.defaultAlgorithm ??
+            DEFAULT_SYSTEM_SETTINGS.defaultAlgorithm,
+        });
+      } catch (error) {
+        console.error("Settings fetch error:", error);
+
+        if (!cancelled) {
+          setLoadError(
+            error instanceof Error ? error.message : "Unable to load settings.",
+          );
+          setRateLimits(ALGORITHMS);
+          setSystemSettings(DEFAULT_SYSTEM_SETTINGS);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
+
     fetchData();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const handleRateLimitChange = (id: number, field: string, value: number) => {
-    setRateLimits((prev) =>
-      prev.map((rl) => (rl.id === id ? { ...rl, [field]: value } : rl))
+  const handleSystemChange = (
+    field: keyof SystemSettings,
+    value: string | number,
+  ) => {
+    setSystemSettings((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
+    setSaved(false);
+  };
+
+  const handleReset = () => {
+    setRateLimits(ALGORITHMS);
+    setSystemSettings(DEFAULT_SYSTEM_SETTINGS);
+    setSaved(false);
+    setLoadError("");
+  };
+
+  const handleSave = () => {
+    // Current backend endpoints only support GET.
+    // Avoid claiming changes have been persisted.
+    setSaved(false);
+    setLoadError(
+      "Settings are currently read-only on the server. Changes here are temporary and are not saved.",
     );
-  };
-
-  const handleSystemChange = (field: string, value: string | number) => {
-    setSystemSettings((prev) => (prev ? { ...prev, [field]: value } : null));
-  };
-
-  const handleSave = async () => {
-    try {
-      await Promise.all([
-        ...rateLimits.map((rl) =>
-          fetch('/api/rate-limits', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(rl),
-          })
-        ),
-        systemSettings &&
-          fetch('/api/system-settings', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(systemSettings),
-          }),
-      ]);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
-    } catch (err) {
-      console.error('Save error:', err);
-    }
   };
 
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="h-8 bg-slate-900 border border-slate-800 rounded-xl animate-pulse w-48" />
-        <div className="h-64 bg-slate-900 border border-slate-800 rounded-xl animate-pulse" />
-        <div className="h-64 bg-slate-900 border border-slate-800 rounded-xl animate-pulse" />
+        <div className="h-8 w-48 animate-pulse rounded-xl border border-slate-800 bg-slate-900" />
+        <div className="h-64 animate-pulse rounded-xl border border-slate-800 bg-slate-900" />
+        <div className="h-64 animate-pulse rounded-xl border border-slate-800 bg-slate-900" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Settings</h1>
-          <p className="text-slate-500 text-sm mt-1">Configure rate limits and system preferences</p>
+          <p className="mt-1 text-sm text-slate-500">
+            View rate-limiting algorithms and system configuration
+          </p>
         </div>
+
         <div className="flex gap-3">
           <button
-            onClick={() => window.location.reload()}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium rounded-lg transition-colors"
+            type="button"
+            onClick={handleReset}
+            className="inline-flex items-center gap-2 rounded-lg bg-slate-800 px-4 py-2 font-medium text-slate-300 transition-colors hover:bg-slate-700"
           >
             <RotateCcw size={16} />
             Reset
           </button>
+
           <button
+            type="button"
             onClick={handleSave}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white font-medium rounded-lg transition-colors"
+            className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 font-medium text-white transition-colors hover:bg-emerald-600"
           >
             <Save size={16} />
             Save Changes
@@ -111,102 +211,172 @@ export default function Settings() {
         </div>
       </div>
 
-      {saved && (
-        <div className="flex items-center gap-2 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
-          <AlertCircle className="w-4 h-4 text-emerald-400" />
-          <span className="text-sm text-emerald-400">Settings saved successfully</span>
+      {loadError && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-300"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{loadError}</span>
         </div>
       )}
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-        <h3 className="text-lg font-semibold text-white mb-4">Rate Limit Configuration</h3>
-        <div className="space-y-6">
-          {rateLimits.map((rl) => (
-            <div key={rl.id} className="p-4 bg-slate-950 border border-slate-800 rounded-lg">
-              <div className="flex items-center gap-2 mb-4">
-                <span
-                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                    rl.tier === 'enterprise'
-                      ? 'bg-indigo-500/10 text-indigo-400'
-                      : rl.tier === 'pro'
-                      ? 'bg-amber-500/10 text-amber-400'
-                      : 'bg-emerald-500/10 text-emerald-400'
-                  }`}
-                >
-                  {rl.tier}
+      {saved && (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3">
+          <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+          <span className="text-sm text-emerald-400">
+            Settings saved successfully.
+          </span>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <h2 className="mb-4 text-lg font-semibold text-white">
+          Supported Rate-Limiting Algorithms
+        </h2>
+
+        <p className="mb-5 text-sm text-slate-500">
+          These are the algorithms implemented by GateKeeper. Their per-client
+          limits are configured from the Clients page.
+        </p>
+
+        <div className="space-y-4">
+          {rateLimits.map((item) => (
+            <div
+              key={item.id}
+              className="rounded-lg border border-slate-800 bg-slate-950 p-4"
+            >
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-400">
+                  {item.algorithm}
                 </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-1.5">
-                    Requests Per Minute
-                  </label>
-                  <input
-                    type="number"
-                    value={rl.requests_per_minute}
-                    onChange={(e) => handleRateLimitChange(rl.id, 'requests_per_minute', Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-1.5">
-                    Burst Capacity
-                  </label>
-                  <input
-                    type="number"
-                    value={rl.burst_capacity}
-                    onChange={(e) => handleRateLimitChange(rl.id, 'burst_capacity', Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-1.5">
-                    Refill Rate (tokens/sec)
-                  </label>
-                  <input
-                    type="number"
-                    value={rl.refill_rate}
-                    onChange={(e) => handleRateLimitChange(rl.id, 'refill_rate', Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-                  />
-                </div>
-              </div>
+
+              <h3 className="font-medium text-white">{item.name}</h3>
+
+              <p className="mt-1 text-sm text-slate-400">{item.description}</p>
             </div>
           ))}
         </div>
+
+        {rateLimits.length === 0 && (
+          <p className="text-sm text-slate-500">
+            No rate-limiting algorithms were returned by the API.
+          </p>
+        )}
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-        <h3 className="text-lg font-semibold text-white mb-4">System Configuration</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <h2 className="mb-4 text-lg font-semibold text-white">
+          System Configuration
+        </h2>
+
+        <p className="mb-5 text-sm text-slate-500">
+          Current configuration reported by the backend. Editing these fields
+          does not reconfigure the running server.
+        </p>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1.5">Redis Host</label>
-            <input
-              type="text"
-              value={systemSettings?.redis_host || ''}
-              onChange={(e) => handleSystemChange('redis_host', e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1.5">Redis Port</label>
-            <input
-              type="number"
-              value={systemSettings?.redis_port || ''}
-              onChange={(e) => handleSystemChange('redis_port', Number(e.target.value))}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="block text-sm font-medium text-slate-400 mb-1.5">Default Algorithm</label>
-            <select
-              value={systemSettings?.algorithm_selection || 'token_bucket'}
-              onChange={(e) => handleSystemChange('algorithm_selection', e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
+            <label
+              htmlFor="serviceName"
+              className="mb-1.5 block text-sm font-medium text-slate-400"
             >
-              <option value="token_bucket">Token Bucket</option>
-              <option value="sliding_window_log">Sliding Window Log</option>
-              <option value="sliding_window_counter">Sliding Window Counter</option>
+              Service Name
+            </label>
+            <input
+              id="serviceName"
+              type="text"
+              readOnly
+              value={systemSettings.serviceName}
+              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-400"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="environment"
+              className="mb-1.5 block text-sm font-medium text-slate-400"
+            >
+              Environment
+            </label>
+            <input
+              id="environment"
+              type="text"
+              readOnly
+              value={systemSettings.environment}
+              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-400"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="serverPort"
+              className="mb-1.5 block text-sm font-medium text-slate-400"
+            >
+              Backend Port
+            </label>
+            <input
+              id="serverPort"
+              type="number"
+              readOnly
+              value={systemSettings.port}
+              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-400"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="redisHost"
+              className="mb-1.5 block text-sm font-medium text-slate-400"
+            >
+              Redis Host
+            </label>
+            <input
+              id="redisHost"
+              type="text"
+              readOnly
+              value={systemSettings.redisHost}
+              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-400"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="redisPort"
+              className="mb-1.5 block text-sm font-medium text-slate-400"
+            >
+              Redis Port
+            </label>
+            <input
+              id="redisPort"
+              type="number"
+              readOnly
+              value={systemSettings.redisPort}
+              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-400"
+            />
+          </div>
+
+          <div>
+            <label
+              htmlFor="defaultAlgorithm"
+              className="mb-1.5 block text-sm font-medium text-slate-400"
+            >
+              Displayed Default Algorithm
+            </label>
+            <select
+              id="defaultAlgorithm"
+              value={systemSettings.defaultAlgorithm}
+              onChange={(event) =>
+                handleSystemChange("defaultAlgorithm", event.target.value)
+              }
+              className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200 focus:border-emerald-500/50 focus:outline-none"
+            >
+              <option value="token-bucket">Token Bucket</option>
+              <option value="sliding-window-log">Sliding Window Log</option>
+              <option value="sliding-window-counter">
+                Sliding Window Counter
+              </option>
             </select>
           </div>
         </div>

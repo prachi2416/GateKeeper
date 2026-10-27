@@ -31,31 +31,32 @@ export default function NotificationCenter() {
   const [loading, setLoading] = useState(true);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const fetchNotifications = async () => {
-    try {
-      const response = await fetch("/api/notifications");
+  
+const fetchNotifications = async () => {
+  try {
+    const response = await fetch("/api/notifications");
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      // API may return either:
-      // []
-      // or { notifications: [] }
-      const notificationList = Array.isArray(data)
-        ? data
-        : Array.isArray(data.notifications)
-          ? data.notifications
-          : [];
-
-      setNotifications(notificationList);
-    } catch (error) {
-      console.error("Fetch error:", error);
-      setNotifications([]);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
     }
-  };
+
+    const data = await response.json();
+
+    const notificationList = Array.isArray(data)
+      ? data
+      : Array.isArray(data.notifications)
+        ? data.notifications
+        : [];
+
+    setNotifications(notificationList);
+  } catch (error) {
+    console.error("Failed to fetch notifications:", error);
+    setNotifications([]);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   useEffect(() => {
     fetchNotifications();

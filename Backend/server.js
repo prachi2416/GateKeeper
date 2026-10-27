@@ -4,7 +4,7 @@ import helmet from "helmet";
 import compression from "compression";
 import morgan from "morgan";
 import dotenv from "dotenv";
-
+import redis from "./services/redisService.js";
 import { connectRedis } from "./services/redisService.js";
 
 import healthRoutes from "./routes/health.js";
@@ -14,6 +14,9 @@ import proxyRoutes from "./routes/proxy.js";
 import adminRoutes from "./routes/admin.js";
 import notificationsRoutes from "./routes/notifications.js";
 import { rateLimiter } from "./middleware/rateLimiter.js";
+import benchmarksRoutes from "./routes/benchmarks.js";
+import gatewayInstancesRoutes from "./routes/gatewayInstances.js";
+import settingsRoutes from "./routes/settings.js";
 
 dotenv.config();
 
@@ -54,19 +57,42 @@ app.use("/api/clients", clientsRoutes);
 app.use("/api/metrics", metricsRoutes);
 app.use("/api/proxy", proxyRoutes);
 app.use("/api/admin", adminRoutes);
-
+app.use("/api/benchmarks", benchmarksRoutes);
+app.use("/api/gateway-instances", gatewayInstancesRoutes);
+app.use("/api", settingsRoutes);
 // ------------------------------------
 // Request logs
 // ------------------------------------
 
-app.get("/api/request-logs", (req, res) => {
-  const limit = Number(req.query.limit) || 10;
+app.get("/api/request-logs", async (req, res) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 10, 100);
 
-  res.json({
-    success: true,
-    logs: [],
-    limit,
-  });
+    const rawLogs = await redis.lrange("gatekeeper:request-logs", 0, limit - 1);
+
+    const logs = rawLogs
+      .map((log) => {
+        try {
+          return JSON.parse(log);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    res.json({
+      success: true,
+      logs,
+      limit,
+    });
+  } catch (error) {
+    console.error("Request logs error:", error);
+
+    res.status(500).json({
+      success: false,
+      error: "Unable to retrieve request logs",
+    });
+  }
 });
 
 // ------------------------------------

@@ -1,13 +1,8 @@
+import "dotenv/config";
 import test from "node:test";
 import assert from "node:assert/strict";
 
 const BASE_URL = "http://localhost:5000";
-
-const API_KEY = process.env.GATEKEEPER_TEST_API_KEY;
-
-if (!API_KEY) {
-  throw new Error("GATEKEEPER_TEST_API_KEY is not set");
-}
 
 async function createClient(name, limit = 3, refillRate = 0.0001) {
   const response = await fetch(`${BASE_URL}/api/clients`, {
@@ -24,17 +19,26 @@ async function createClient(name, limit = 3, refillRate = 0.0001) {
     }),
   });
 
-  assert.equal(response.status, 201);
+  assert.equal(
+    response.status,
+    201,
+    `Client creation failed: HTTP ${response.status}`,
+  );
 
-const data = await response.json();
+  const data = await response.json();
 
-return data.client;
+  assert.ok(data.client?.id, "Created client is missing its ID");
+  assert.ok(data.client?.apiKey, "Created client is missing its API key");
+
+  return data.client;
 }
 
 test("API allows a valid API key", async () => {
+  const client = await createClient(`API Valid Key Test ${Date.now()}`);
+
   const response = await fetch(`${BASE_URL}/api/test`, {
     headers: {
-      "X-API-Key": API_KEY,
+      "X-API-Key": client.apiKey,
     },
   });
 

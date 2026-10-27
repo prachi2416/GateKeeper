@@ -31,17 +31,31 @@ export default function Benchmarks() {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
 
-  const fetchBenchmarks = useCallback(async () => {
-    try {
-      const res = await fetch('/api/benchmarks');
-      const data = await res.json();
-      setBenchmarks(data);
-    } catch (err) {
-      console.error('Fetch error:', err);
-    } finally {
-      setLoading(false);
+  
+const fetchBenchmarks = useCallback(async () => {
+  try {
+    const res = await fetch("/api/benchmarks");
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to fetch benchmarks");
     }
-  }, []);
+
+    setBenchmarks(
+      Array.isArray(data)
+        ? data
+        : Array.isArray(data?.benchmarks)
+          ? data.benchmarks
+          : [],
+    );
+  } catch (err) {
+    console.error("Fetch error:", err);
+    setBenchmarks([]);
+  } finally {
+    setLoading(false);
+  }
+}, []);
+
 
   useEffect(() => {
     fetchBenchmarks();
@@ -74,16 +88,18 @@ export default function Benchmarks() {
     }
   };
 
-  const chartData = benchmarks.map((b) => ({
-    name: b.algorithm,
-    throughput: Math.round(b.throughput / 1000),
-    requests_per_sec: Math.round(b.requests_per_sec / 1000),
-    p50: b.p50,
-    p95: b.p95,
-    p99: b.p99,
-    memory: b.memory_usage,
-    accuracy: b.rejection_accuracy,
-  }));
+  
+const chartData = benchmarks.map((b) => ({
+  name: b.algorithm,
+  throughput: Number(b.throughput ?? 0),
+  requests_per_sec: Number(b.requests_per_sec ?? 0),
+  p50: Number(b.p50 ?? 0),
+  p95: Number(b.p95 ?? 0),
+  p99: Number(b.p99 ?? 0),
+  memory: Number(b.memory_usage ?? 0),
+  accuracy: Number(b.rejection_accuracy ?? 0),
+}));
+
 
   const metrics = [
     { label: 'Throughput', key: 'throughput', unit: 'K req/s', icon: Zap, color: '#10b981' },
