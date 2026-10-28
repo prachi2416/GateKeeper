@@ -96,17 +96,6 @@ app.get("/api/request-logs", async (req, res) => {
 });
 
 // ------------------------------------
-// Notifications
-// ------------------------------------
-
-app.get("/api/notifications", (req, res) => {
-  res.json({
-    success: true,
-    notifications: [],
-  });
-});
-
-// ------------------------------------
 // Root endpoint
 // ------------------------------------
 
