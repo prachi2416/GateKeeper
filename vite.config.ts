@@ -13,7 +13,7 @@ export default defineConfig(async ({ mode }) => {
 
   const env = loadEnv(mode, process.cwd(), ["VITE_", "NEXT_PUBLIC_"]);
 
-  const processEnvDefines = {};
+  const processEnvDefines: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(env)) {
     processEnvDefines[`process.env.${key}`] = JSON.stringify(value);

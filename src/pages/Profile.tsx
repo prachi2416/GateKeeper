@@ -8,7 +8,9 @@ export default function Profile() {
     <div className="space-y-6 max-w-2xl">
       <div>
         <h1 className="text-2xl font-bold text-white">Profile</h1>
-        <p className="text-slate-500 text-sm mt-1">Manage your account information</p>
+        <p className="text-slate-500 text-sm mt-1">
+          Manage your account information
+        </p>
       </div>
 
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
@@ -22,7 +24,9 @@ export default function Profile() {
             </button>
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-white">{user?.displayName || user?.email?.split('@')[0] || 'Admin User'}</h2>
+            <h2 className="text-lg font-semibold text-white">
+              {user?.email?.split("@")[0] || "Admin User"}
+            </h2>
             <p className="text-sm text-slate-500">{user?.email}</p>
             <span className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 bg-emerald-500/10 text-emerald-400 text-xs font-medium rounded-full">
               <Shield size={10} />
@@ -33,24 +37,28 @@ export default function Profile() {
 
         <div className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1.5">Display Name</label>
+            <label className="block text-sm font-medium text-slate-400 mb-1.5">
+              Display Name
+            </label>
             <div className="relative">
               <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
               <input
                 type="text"
-                defaultValue={user?.displayName || 'Admin User'}
+                defaultValue={user?.email?.split("@")[0] || "Admin User"}
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1.5">Email Address</label>
+            <label className="block text-sm font-medium text-slate-400 mb-1.5">
+              Email Address
+            </label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
               <input
                 type="email"
-                defaultValue={user?.email || ''}
+                defaultValue={user?.email || ""}
                 readOnly
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-500 cursor-not-allowed"
               />
@@ -58,7 +66,9 @@ export default function Profile() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1.5">Role</label>
+            <label className="block text-sm font-medium text-slate-400 mb-1.5">
+              Role
+            </label>
             <div className="relative">
               <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
               <input
@@ -71,12 +81,14 @@ export default function Profile() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-400 mb-1.5">Last Login</label>
+            <label className="block text-sm font-medium text-slate-400 mb-1.5">
+              Last Login
+            </label>
             <div className="relative">
               <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
               <input
                 type="text"
-                defaultValue={user?.metadata?.lastSignInTime ? new Date(user.metadata.lastSignInTime).toLocaleString() : 'N/A'}
+                defaultValue={"N/A"}
                 readOnly
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-500 cursor-not-allowed"
               />
