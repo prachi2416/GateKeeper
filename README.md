@@ -14,7 +14,6 @@
 [![Tests](https://img.shields.io/badge/tests-11%2F11%20passing-brightgreen)](#testing)
 
 </div>
----
 
 ## Why this project exists
 
